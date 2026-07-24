@@ -20,6 +20,11 @@ jobs:
   postgres-acceptance:
     runs-on: ubuntu-latest
     needs: static-check
+    env:
+      # 与 postgres service 容器使用相同的测试库和管理员身份，
+      # 确保 db/init/002_init_roles.sh 和 003_apply_migrations.sh 隐式连接时不落入默认 postgres 库。
+      POSTGRES_USER: postgres
+      POSTGRES_DB: longyuan_ci
     services:
       postgres:
         image: postgres:16-alpine
