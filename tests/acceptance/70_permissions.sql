@@ -90,11 +90,11 @@ BEGIN
     RAISE NOTICE 'PASS 四.4d: approval_event_writer 可写 event_ledger';
 END $$;
 
--- 70e readonly_analytics 越权写 candidate_events 必须失败
+-- 70e app_readonly 越权写 candidate_events 必须失败（冻结只读角色名为 app_readonly）
 DO $$
 DECLARE denied boolean := false;
 BEGIN
-    SET LOCAL ROLE readonly_analytics;
+    SET LOCAL ROLE app_readonly;
     BEGIN
         INSERT INTO candidate_events (proposed_event_type, actor_id, object_type, object_id,
                                       correlation_id, proposed_payload)

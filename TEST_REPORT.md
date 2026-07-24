@@ -180,7 +180,178 @@ Domain Service、Worker 模型适配、审批服务、Outbox Consumer 与状态�
 
 ---
 
-## 附：测试资产清单（审计者维护，可自由增删改）
+# 第四轮 · CI 行为验收阻断诊断（2026-07-24）
+
+**背景**：实现方推送后，`phase1a-ci.yml` 的 `static-check` job ✅ 通过；`postgres-acceptance` job 在 **Init roles 步骤失败（psql 退出码 2）**，其后 Apply migrations / Load fixtures / Run acceptance **全部 skipped**。实现方已加 `POSTGRES_USER/POSTGRES_DB` 但仍失败，且无权限读取 CI 原始日志。
+
+**审计者静态诊断（无需日志，已定位根因）**：
+
+| 事实 | 证据 |
+|---|---|
+| 失败步骤内部脚本调用 psql **不带 `-h` / 无 `PGHOST`** | `db/init/002_init_roles.sh:62`、`003_apply_migrations.sh:33/45/54/56` 均为 `psql … --username --dbname`，无主机参数 |
+| CI 中**通过**的步骤都显式 `-h localhost` | `phase1a-ci.yml:51`(Load schema)、`:77/79`(fixtures)、`:90/93`(acceptance) |
+| CI **未**在任何 env 设 `PGHOST/PGPORT` | 仅步骤内联 `-h localhost`，脚本内部 psql 无法继承 |
+
+**根因**：GitHub Actions 的 postgres 是**仅 TCP 的 service 容器**（`localhost:5432`），runner 主机上**没有 Unix socket**。libpq 无 `-h`/`PGHOST` 时默认走本地 socket → 连接失败 → **psql 退出码 2**（正是观测值）。`002/003` 脚本本身对其**真实运行时**（compose 下由 entrypoint 在 postgres 容器内执行，socket 存在）是**正确的**；只有在「从 runner 主机连 TCP service 容器」这一 CI 场景下才暴露。
+
+**结论：这是 CI 接线缺陷，非 Schema/角色治理缺陷。** 不改动被测脚本。
+
+**修复（仅 CI，交实现方应用）**：在 `postgres-acceptance` job 级 env 增加两行——
+
+```yaml
+    env:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: longyuan_ci
+      PGHOST: localhost      # ← 新增：令 002/003 内部 psql 走 TCP service，而非缺失的本地 socket
+      PGPORT: "5432"         # ← 新增
+```
+
+（`PGPASSWORD: ci-test` 已在各步骤存在，TCP md5 认证所需，无需再动。）此改动应使 Init roles 与 Apply migrations 连上 service，后续 acceptance 步骤方能真正执行。
+
+**行为验收状态：仍未达成。** `acceptance/*.sql`（含审计者 `10/60/70/81`）本轮在 CI 中 **SKIPPED**，未产生任何行为证据。审计者**不签发** Phase 1A 行为验收，直至在修复后的 CI（或等价 PG16 环境）观测到全部 acceptance 真实 PASS。静态验收维持全绿不变。
+
+---
+
+# 第五轮 · acceptance 步骤失败静态定位（2026-07-24）
+
+**背景**：连接问题修复后，`002/003`/fixtures 均成功，失败转移到 **Run acceptance tests 步骤（退出码 1）**；实现方仍无法读取 CI 日志、看不到具体哪个用例失败。审计者静态逐文件比对「当前硬化后 Schema + 002 真实角色 + 010 种子 + CI 循环」，无需日志即定位到全部原因。
+
+## 失败根因（三项，均已定位）
+
+| # | 原因 | 证据 | 处置 |
+|---|---|---|---|
+| 1 | **审计者用例 `70_permissions.sql:97` 引用了不存在的角色 `readonly_analytics`** | 第三轮我把 fixture `000` 收紧后只保留五个冻结角色（`app_readonly` 等），`readonly_analytics` 不再创建；`SET LOCAL ROLE readonly_analytics` 直接报「role does not exist」→ 文件 70 失败 | **已修**：`70e` 改用 `app_readonly`（回归自 AUDIT-FIX-1 的连带遗漏，我自己的疏漏） |
+| 2 | **`40_full_loop.sql` 行为块按设计 `RAISE EXCEPTION`**（§26.4 唯一判据未达成） | §26.4 完整闭环属 Phase 4–6，本不应作为 Phase 1A 门禁的硬失败，却使 acceptance 步骤必然红 | **已修**：行为块改为 **PENDING·跳过**（无证据→NOTICE 不失败；证据齐全→PASS；证据不一致→硬 FAIL）。§26.4 在报告仍记「未达成」直至该块 PASS |
+| 3 | **CI acceptance 循环不逐文件重灌种子** | `phase1a-ci.yml:79-82` 仅一次性加载 `010_seed.sql`，循环 `:95-98` 每个文件后 `TRUNCATE … CASCADE`。审计者 harness `run_all.sh` 逐文件重灌种子，CI 未照做 → 非确定性（依赖 event_ledger 的 TRUNCATE 守卫恰好使级联 TRUNCATE 整体中止、种子侥幸存活；不可依赖） | **交实现方**：见下方 CI 补丁 |
+
+> 注 #1 是我第三轮收紧 fixture 时的连带疏漏——去掉 `readonly_analytics` 却漏改引用它的 `70e`。已修正并自查全部 `SET ROLE` 仅用五个冻结角色。
+
+## 交实现方的 CI 补丁（robustness，一处）
+
+`Run acceptance tests` 循环内、执行每个文件**之前**重灌种子，与 `run_all.sh` 对齐，使结果确定：
+
+```yaml
+          for f in tests/acceptance/*.sql; do
+            echo ">> RUN $(basename "$f")"
+            # ↓ 新增：每个文件前重灌种子（--single-transaction 会回滚各文件写入，故需重灌）
+            psql -h localhost -U postgres -d longyuan_ci -q < tests/fixtures/010_seed.sql || true
+            psql -h localhost -U postgres -d longyuan_ci -v ON_ERROR_STOP=1 --single-transaction < "$f" \
+              && echo "   => PASS" || { echo "   => FAIL"; fails=$((fails+1)); }
+            psql ... TRUNCATE ... CASCADE ... || true    # 保留；与重灌配对
+          done
+```
+
+（`010_seed.sql` 全部 `ON CONFLICT DO NOTHING`，重复加载幂等、安全。）
+
+## 复验结论（本轮）
+
+- **两处审计资产缺陷已修**（`70e` 角色名、`40` PENDING 化）；`bash -n`、两个静态检查器均仍全绿。
+- **CI 需应用 #3 的重灌种子补丁**后，acceptance 才能确定性执行。
+- 预期修复后行为结果：`10/20/30/50/60/70/80/81` 应全 PASS；`40` 输出 **PENDING 26.4**（不失败）；即 `postgres-acceptance` 转绿。
+- **仍不签发 Phase 1A 行为验收**：以上为静态推断，**审计者尚未观测到 CI 真实全绿**。请实现方应用 #3 补丁并回传 `Run acceptance tests` 步骤日志（或其转绿结果）。
+- **§26.4 唯一判据维持「未达成」**：`40` 现为 PENDING，非 PASS。
+
+---
+
+# 第六轮 · 真实 CI 证据、污染纠正与隔离重设计（2026-07-24）
+
+**背景**：`74ec3e3`（含 PGHOST 修复）后，`Init roles`→`Apply migrations`→`Load fixtures` 全部成功，`Run acceptance tests` 失败（exit 1，3 个文件 FAIL）。本轮取得**真实 CI 日志片段**，据此纠正两处审计者此前的错误判断。
+
+## A. 三个 FAIL 的最终分类
+
+| # | 文件·用例 | 真实原因 | 定性 | 归属 |
+|---|---|---|---|---|
+| 1 | `40_full_loop.sql` · 26.4-behavior | §26.4 唯一判据硬断言（闭环属 Phase 4–6，证据=0）| **按设计的硬红灯**（非缺陷）| 审计者（阶段隔离）|
+| 2 | `70_permissions.sql:97` | `SET ROLE readonly_analytics`——第三轮收紧 fixture 后该角色已不存在 | **审计者测试 bug** | 审计者（改 `app_readonly`）|
+| 3 | `80_phase1a_governance.sql` · P1A-15 | 断言 `SQLERRM LIKE '%immutable%'`，但 `prompt_versions_no_mutation` 复用 `prevent_event_mutation()`，抛的是 **`event_ledger is append-only`**（无 `immutable`）| **实现方测试的脆弱字符串断言 + 误导性实现消息**（治理行为本身有效）| 实现方（Kimi）|
+
+**关键澄清（#3）**：日志 `NOTICE PASS P1A-13/14` + `ERROR FAIL P1A-15`。prompt_versions 的 `UPDATE` **确实被触发器拒绝**（治理有效）；P1A-13/16 通过是因为它们匹配 `%semantic%`（model/agent 的消息含 `semantic`+`immutable`），唯独 P1A-15 匹配 `%immutable%` 而 prompt 复用了 event_ledger 的 `append-only` 消息 → 不匹配 → 测试自身 RAISE。**不是实现缺陷，是测试断言 + 误导消息问题。**
+
+## B. 污染风险判断——纠正（我此前结论错误）
+
+**更正**：`psql --single-transaction` 在脚本**成功时 COMMIT**，仅在命令失败且 `ON_ERROR_STOP` 生效时才 ROLLBACK。因此我第四/五轮"没有真实污染"的结论**错误**。真实情况：
+
+- 通过的用例会**提交**其写入（7 个 acceptance 文件含 `INSERT`，如 `10d` 提交更正事件、`70d` 以 `approval_event_writer` 提交 `deliverable.reviewed` 事件、`30b` 提交 `idem-dup-test-1`）；
+- 后置 `TRUNCATE … CASCADE` 因级联触及 `event_ledger` 被 append-only 触发器整体中止（日志 line 256/281 `event_ledger is append-only`），`|| true` **吞掉**该失败；
+- 已提交的 `event_ledger` 行**永不可清除**（append-only），跨文件累积；
+- `ON CONFLICT DO NOTHING` **无法恢复被修改/新增的已提交数据**；
+- 结论：**存在真实的跨用例状态污染，测试结果具顺序依赖性。** 现有清理机制不可接受。
+
+## C. Phase 1A 显式测试清单（门禁执行集）
+
+按此顺序执行；**明确排除 `40_full_loop.sql`**（Phase 4–6）：
+```
+10_event_immutability.sql
+20_candidate_isolation.sql
+30_idempotency.sql
+50_recovery.sql
+60_governance_redlines.sql
+70_permissions.sql
+80_phase1a_governance.sql
+81_phase1a_audit.sql
+```
+CI 摘要须单列一行：`40_full_loop.sql — PENDING（Phase 4–6）`（不计入 PASS，也不计入 FAIL）。
+
+## D. 选定的唯一隔离方案（不保留并列方案）
+
+**采用「每文件显式事务 + 始终 ROLLBACK」包装。**
+
+依据：静态检查确认全部 acceptance 文件**不含**任何 SQL 级 `BEGIN;`/`COMMIT;`/`ROLLBACK;`、`\connect`、`CREATE/DROP DATABASE`、`VACUUM`、`CREATE INDEX CONCURRENTLY` 等（所有 `BEGIN` 均为 PL/pgSQL `DO $$` 块关键字）。因此可安全外包在一个事务里并**无条件回滚**，无需更重的"每文件独立临时库"方案（后者仅在存在不可回滚命令时才需要）。
+
+机制（每个文件）：
+1. **先加载 seed**：`psql -v ON_ERROR_STOP=1 -f tests/fixtures/010_seed.sql`（**失败即 FAIL，无 `|| true`**）；
+2. **包裹执行**：把 `BEGIN;` + 文件内容 + `ROLLBACK;` 交给 `psql -v ON_ERROR_STOP=1`；
+3. **成功也 ROLLBACK**：丢弃该文件的一切写入，seed 与库回到干净态；
+4. **失败即回滚退出**：`ON_ERROR_STOP` 使 psql 出错即停、非零退出，未提交事务在断开时回滚；CI 据非零码记该文件 FAIL；
+5. **删除**后置 `TRUNCATE … CASCADE` 与一切 `|| true`。
+
+这样：无任何用例提交数据 → 无 append-only 累积 → 无跨用例污染 → 结果与执行顺序无关。
+
+## E. 给 Kimi 的最小 CI 变更规范（`.github/workflows/phase1a-ci.yml`，审计者不改此文件）
+
+替换 `Run acceptance tests` 步骤循环为：
+```bash
+set -euo pipefail
+PHASE1A="10_event_immutability 20_candidate_isolation 30_idempotency \
+         50_recovery 60_governance_redlines 70_permissions \
+         80_phase1a_governance 81_phase1a_audit"
+echo "40_full_loop.sql — PENDING（Phase 4–6）"
+fails=0
+for name in $PHASE1A; do
+  f="tests/acceptance/${name}.sql"
+  echo ">> RUN ${name}"
+  # 1) seed（失败即整步失败，绝不吞错）
+  psql -h localhost -U postgres -d longyuan_ci -v ON_ERROR_STOP=1 -f tests/fixtures/010_seed.sql
+  # 2) 始终回滚地执行测试文件
+  if { echo "BEGIN;"; cat "$f"; echo "ROLLBACK;"; } \
+       | psql -h localhost -U postgres -d longyuan_ci -v ON_ERROR_STOP=1; then
+    echo "   PASS ${name}"
+  else
+    echo "   FAIL ${name}"; fails=$((fails+1))
+  fi
+done
+[ "$fails" -eq 0 ] || { echo "Phase 1A: ${fails} file(s) FAIL"; exit 1; }
+echo "Phase 1A acceptance: PASS（40_full_loop PENDING）"
+```
+硬性约束：**不得**再出现 `--single-transaction` 充当清理、`TRUNCATE … CASCADE`、任何 `|| true`；seed 失败必须使整步失败。
+
+## F. 给 Kimi 的 P1A-15 实现与测试变更规范
+
+不要把测试改成匹配 `%append-only%`（那会固化错误设计）。两件事一起做：
+1. **实现**：为 `prompt_versions` 提供**专属**不可变提示，替换对 `prevent_event_mutation()` 的复用，例如新函数抛
+   `prompt_versions are immutable; create a new version`（`event_ledger is append-only` 对 prompt_versions 是误导性消息）。
+2. **测试**（`80` P1A-15）：改为**不依赖完整错误文案**——验证 ①`UPDATE` 确被拒绝（捕获到异常即可，不比对整串），且 ②原记录内容保持不变（更新前后 `SELECT template` 相等）。建议对 P1A-13/16 一并采用"行内容不变"式断言，去除脆弱字符串匹配。
+
+## G. 本轮处置
+
+- 审计者本轮**仅改自有资产**：`40_full_loop.sql`（还原硬断言）、`70_permissions.sql`（保留 `app_readonly`）、`TEST_REPORT.md`（本节）。**未改** `.github/workflows/phase1a-ci.yml`（属实现方，规范见 E）。
+- **未执行任何 git 写操作**（无 add/commit/push）。
+- **§26.4 唯一判据维持「未达成」**：`40` 现为原始硬断言，仅在 Phase 1A 门禁中被显式排除（不运行），闭环真正验收时按硬断言执行。
+- **实现本身本轮未发现新缺陷**：P1A-15 属测试脆弱 + 消息误导；prompt 不可变治理有效。
+
+---
+
+## 附：测试资产清单（审计者维护，可自由增改）
 
 - `tests/README.md` — 运行说明与隔离约束
 - `tests/harness/run_all.sh` · `run_all.ps1` — 一次性容器运行器（需 Docker/PG16）
