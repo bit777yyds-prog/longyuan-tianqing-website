@@ -1,0 +1,97 @@
+name: Phase 1A Governance Hardening CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+jobs:
+  static-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static schema check
+        run: bash tests/static/check_schema.sh
+      - name: Deployment path regression check
+        run: bash tests/static/check_deployment_path.sh
+
+  postgres-acceptance:
+    runs-on: ubuntu-latest
+    needs: static-check
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ci-test
+          POSTGRES_DB: longyuan_ci
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install psql
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Load schema
+        env:
+          PGPASSWORD: ci-test
+        run: |
+          psql -h localhost -U postgres -d longyuan_ci -v ON_ERROR_STOP=1 \
+            < db/init/001_agent_native_schema.sql
+      - name: Init roles
+        env:
+          PGPASSWORD: ci-test
+          WEB_DATABASE_URL: postgresql://app_rw:change-me@localhost:5432/longyuan_ci
+          WORKER_DATABASE_URL: postgresql://worker_candidate_rw:change-me@localhost:5432/longyuan_ci
+          SCHEDULER_DATABASE_URL: postgresql://scheduler_jobs_rw:change-me@localhost:5432/longyuan_ci
+          APPROVAL_EVENT_WRITER_DATABASE_URL: postgresql://approval_event_writer:change-me@localhost:5432/longyuan_ci
+          READONLY_DATABASE_URL: postgresql://app_readonly:change-me@localhost:5432/longyuan_ci
+        run: |
+          bash db/init/002_init_roles.sh
+      - name: Prepare migrations path
+        run: |
+          # 003_apply_migrations.sh 固定读取 /db/migrations，与 docker-compose 部署路径一致
+          sudo mkdir -p /db
+          sudo cp -r "${GITHUB_WORKSPACE}/db/migrations" /db/migrations
+      - name: Apply migrations
+        env:
+          PGPASSWORD: ci-test
+        run: |
+          bash db/init/003_apply_migrations.sh
+      - name: Load fixtures
+        env:
+          PGPASSWORD: ci-test
+        run: |
+          psql -h localhost -U postgres -d longyuan_ci -v ON_ERROR_STOP=1 \
+            < tests/fixtures/000_test_roles.sql
+          psql -h localhost -U postgres -d longyuan_ci -v ON_ERROR_STOP=1 \
+            < tests/fixtures/010_seed.sql
+      - name: Run acceptance tests
+        env:
+          PGPASSWORD: ci-test
+        run: |
+          set -euo pipefail
+          fails=0
+          for f in tests/acceptance/*.sql; do
+            echo "------------------------------------------------------------"
+            echo ">> RUN $(basename "$f")"
+            psql -h localhost -U postgres -d longyuan_ci -v ON_ERROR_STOP=1 --single-transaction < "$f" \
+              && echo "   => PASS" || { echo "   => FAIL"; fails=$((fails+1)); }
+            # event_ledger 受 BEFORE TRUNCATE 触发器保护，且测试在 --single-transaction 中已回滚，无需清理
+            psql -h localhost -U postgres -d longyuan_ci -q \
+              -c "TRUNCATE approvals, candidate_events, agent_runs, agent_jobs, state_projections,
+                           agent_trigger_rules, deliverables, tasks, agent_versions,
+                           agent_definitions, prompt_versions, model_configs, projects, actors CASCADE;" || true
+          done
+          if [ "$fails" -ne 0 ]; then
+            echo "Phase 1A CI: $fails 个测试文件 FAIL"
+            exit 1
+          fi
+          echo "Phase 1A CI: 全部 acceptance 测试 PASS"

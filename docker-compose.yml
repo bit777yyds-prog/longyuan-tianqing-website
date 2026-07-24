@@ -1,0 +1,121 @@
+version: "3.9"
+
+services:
+  gateway:
+    image: caddy:2.8-alpine
+    container_name: longyuan-gateway
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    networks:
+      - longyuan
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/web.Dockerfile
+    container_name: longyuan-web
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      APP_ROLE: web
+      DATABASE_URL: ${WEB_DATABASE_URL}
+    expose:
+      - "3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - longyuan
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: longyuan-postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      TZ: Asia/Shanghai
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - ./db/migrations:/db/migrations:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_ADMIN_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - longyuan
+
+  worker:
+    build:
+      context: .
+      dockerfile: deploy/worker.Dockerfile
+    container_name: longyuan-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      APP_ROLE: worker
+      DATABASE_URL: ${WORKER_DATABASE_URL}
+      WORKER_ID: worker-1
+      JOB_POLL_INTERVAL_SECONDS: 2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "dist/worker/healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - longyuan
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: deploy/worker.Dockerfile
+    container_name: longyuan-scheduler
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      APP_ROLE: scheduler
+      DATABASE_URL: ${SCHEDULER_DATABASE_URL}
+      BACKUP_ENABLED: "false"
+      BACKUP_CRON: "0 3 * * *"
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_BUCKET: ${S3_BACKUP_BUCKET}
+    command: ["node", "dist/worker/index.js", "scheduler"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - longyuan
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  longyuan:
+    driver: bridge
