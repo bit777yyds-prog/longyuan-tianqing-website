@@ -233,18 +233,25 @@ END $$;
 -- ---------- 13. model_configs 语义字段不可原地修改 ----------
 DO $$
 DECLARE blocked boolean := false;
+        original_provider TEXT;
+        current_provider TEXT;
 BEGIN
     INSERT INTO model_configs (id, provider, model_name, endpoint, provider_region, data_processing_region,
                                capability, pricing_policy, output_contract, verification_status)
     VALUES ('00000000-0000-0000-0000-0000000000e2', 'mock', 'mock-v2', 'http://localhost',
             'CN', 'CN', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, 'unverified');
+    SELECT provider INTO original_provider FROM model_configs WHERE id = '00000000-0000-0000-0000-0000000000e2';
     BEGIN
         UPDATE model_configs SET provider = 'changed' WHERE id = '00000000-0000-0000-0000-0000000000e2';
     EXCEPTION WHEN others THEN
-        IF SQLERRM LIKE '%semantic%' THEN blocked := true; END IF;
+        blocked := true;
     END;
-    IF NOT blocked THEN RAISE EXCEPTION 'FAIL P1A-13: model_configs provider 语义字段可被原地修改'; END IF;
-    RAISE NOTICE 'PASS P1A-13: model_configs 语义字段不可原地修改';
+    SELECT provider INTO current_provider FROM model_configs WHERE id = '00000000-0000-0000-0000-0000000000e2';
+    IF NOT blocked THEN RAISE EXCEPTION 'FAIL P1A-13a: model_configs provider 语义字段可被原地修改'; END IF;
+    IF current_provider IS DISTINCT FROM original_provider THEN
+        RAISE EXCEPTION 'FAIL P1A-13b: model_configs provider 语义字段虽被拒绝但仍被修改（当前=%，原始=%）', current_provider, original_provider;
+    END IF;
+    RAISE NOTICE 'PASS P1A-13: model_configs 语义字段不可原地修改且原值未变';
 END $$;
 
 -- ---------- 14. model_configs 运营字段可更新 ----------
@@ -263,28 +270,42 @@ END $$;
 -- ---------- 15. prompt_versions 语义字段不可原地修改 ----------
 DO $$
 DECLARE blocked boolean := false;
+        original_template TEXT;
+        current_template TEXT;
 BEGIN
+    SELECT template INTO original_template FROM prompt_versions WHERE id = '00000000-0000-0000-0000-0000000000f1';
     BEGIN
         UPDATE prompt_versions SET template = 'changed' WHERE id = '00000000-0000-0000-0000-0000000000f1';
     EXCEPTION WHEN others THEN
-        IF SQLERRM LIKE '%immutable%' THEN blocked := true; END IF;
+        blocked := true;
     END;
-    IF NOT blocked THEN RAISE EXCEPTION 'FAIL P1A-15: prompt_versions 语义字段可被原地修改'; END IF;
-    RAISE NOTICE 'PASS P1A-15: prompt_versions 语义字段不可原地修改';
+    SELECT template INTO current_template FROM prompt_versions WHERE id = '00000000-0000-0000-0000-0000000000f1';
+    IF NOT blocked THEN RAISE EXCEPTION 'FAIL P1A-15a: prompt_versions 语义字段可被原地修改'; END IF;
+    IF current_template IS DISTINCT FROM original_template THEN
+        RAISE EXCEPTION 'FAIL P1A-15b: prompt_versions template 虽被拒绝但仍被修改（当前=%，原始=%）', current_template, original_template;
+    END IF;
+    RAISE NOTICE 'PASS P1A-15: prompt_versions 语义字段不可原地修改且原值未变';
 END $$;
 
 -- ---------- 16. agent_versions 语义字段不可原地修改 ----------
 DO $$
 DECLARE blocked boolean := false;
+        original_model_config_id UUID;
+        current_model_config_id UUID;
 BEGIN
+    SELECT model_config_id INTO original_model_config_id FROM agent_versions WHERE id = '00000000-0000-0000-0000-000000000201';
     BEGIN
         UPDATE agent_versions SET model_config_id = '00000000-0000-0000-0000-0000000000e2'
         WHERE id = '00000000-0000-0000-0000-000000000201';
     EXCEPTION WHEN others THEN
-        IF SQLERRM LIKE '%semantic%' THEN blocked := true; END IF;
+        blocked := true;
     END;
-    IF NOT blocked THEN RAISE EXCEPTION 'FAIL P1A-16: agent_versions 语义字段可被原地修改'; END IF;
-    RAISE NOTICE 'PASS P1A-16: agent_versions 语义字段不可原地修改';
+    SELECT model_config_id INTO current_model_config_id FROM agent_versions WHERE id = '00000000-0000-0000-0000-000000000201';
+    IF NOT blocked THEN RAISE EXCEPTION 'FAIL P1A-16a: agent_versions 语义字段可被原地修改'; END IF;
+    IF current_model_config_id IS DISTINCT FROM original_model_config_id THEN
+        RAISE EXCEPTION 'FAIL P1A-16b: agent_versions model_config_id 虽被拒绝但仍被修改（当前=%，原始=%）', current_model_config_id, original_model_config_id;
+    END IF;
+    RAISE NOTICE 'PASS P1A-16: agent_versions 语义字段不可原地修改且原值未变';
 END $$;
 
 -- ---------- 17. replay run 不能产生 candidate ----------

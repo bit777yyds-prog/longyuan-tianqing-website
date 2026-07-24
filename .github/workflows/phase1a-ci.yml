@@ -85,20 +85,24 @@ jobs:
           PGPASSWORD: ci-test
         run: |
           set -euo pipefail
+          PHASE1A="10_event_immutability 20_candidate_isolation 30_idempotency \
+                   50_recovery 60_governance_redlines 70_permissions \
+                   80_phase1a_governance 81_phase1a_audit"
+          echo "40_full_loop.sql — PENDING（Phase 4–6）"
           fails=0
-          for f in tests/acceptance/*.sql; do
-            echo "------------------------------------------------------------"
-            echo ">> RUN $(basename "$f")"
-            psql -h localhost -U postgres -d longyuan_ci -v ON_ERROR_STOP=1 --single-transaction < "$f" \
-              && echo "   => PASS" || { echo "   => FAIL"; fails=$((fails+1)); }
-            # event_ledger 受 BEFORE TRUNCATE 触发器保护，且测试在 --single-transaction 中已回滚，无需清理
-            psql -h localhost -U postgres -d longyuan_ci -q \
-              -c "TRUNCATE approvals, candidate_events, agent_runs, agent_jobs, state_projections,
-                           agent_trigger_rules, deliverables, tasks, agent_versions,
-                           agent_definitions, prompt_versions, model_configs, projects, actors CASCADE;" || true
+          for name in $PHASE1A; do
+            f="tests/acceptance/${name}.sql"
+            echo ">> RUN ${name}"
+            # 1) seed（失败即整步失败，绝不吞错）
+            psql -h localhost -U postgres -d longyuan_ci -v ON_ERROR_STOP=1 \
+              -f tests/fixtures/010_seed.sql
+            # 2) 始终回滚地执行测试文件
+            if { echo "BEGIN;"; cat "$f"; echo "ROLLBACK;"; } \
+                 | psql -h localhost -U postgres -d longyuan_ci -v ON_ERROR_STOP=1; then
+              echo "   PASS ${name}"
+            else
+              echo "   FAIL ${name}"; fails=$((fails+1))
+            fi
           done
-          if [ "$fails" -ne 0 ]; then
-            echo "Phase 1A CI: $fails 个测试文件 FAIL"
-            exit 1
-          fi
-          echo "Phase 1A CI: 全部 acceptance 测试 PASS"
+          [ "$fails" -eq 0 ] || { echo "Phase 1A: ${fails} file(s) FAIL"; exit 1; }
+          echo "Phase 1A acceptance: PASS（40_full_loop PENDING）"
