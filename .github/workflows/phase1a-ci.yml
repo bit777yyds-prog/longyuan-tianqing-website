@@ -25,6 +25,8 @@ jobs:
       # 确保 db/init/002_init_roles.sh 和 003_apply_migrations.sh 隐式连接时不落入默认 postgres 库。
       POSTGRES_USER: postgres
       POSTGRES_DB: longyuan_ci
+      PGHOST: localhost
+      PGPORT: "5432"
     services:
       postgres:
         image: postgres:16-alpine
