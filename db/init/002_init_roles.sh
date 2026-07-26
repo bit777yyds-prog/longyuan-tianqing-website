@@ -33,7 +33,14 @@ sql_escape() {
 }
 
 random_password() {
-    openssl rand -base64 32 2>/dev/null || cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 32
+    if openssl rand -base64 32 2>/dev/null; then
+        return 0
+    fi
+    # head 会提前关闭管道，在 pipefail 下导致上游收到 SIGPIPE；
+    # 临时关闭 pipefail，仅读取已输出的 32 个字符。
+    set +o pipefail
+    LC_ALL=C tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32
+    set -o pipefail
 }
 
 PGUSER="${POSTGRES_USER:-postgres}"
