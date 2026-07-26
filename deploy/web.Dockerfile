@@ -15,6 +15,7 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+RUN pnpm install
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV APP_ROLE=web
 RUN pnpm -F @longyuan/web build
