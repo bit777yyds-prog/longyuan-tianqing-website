@@ -67,6 +67,8 @@ jobs:
           docker compose up -d || {
             echo "=== docker compose ps ==="
             docker compose ps
+            echo "=== postgres logs ==="
+            docker compose logs postgres
             echo "=== web logs ==="
             docker compose logs web
             echo "=== worker logs ==="
