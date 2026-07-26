@@ -34,8 +34,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - uploads:/app/uploads
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://localhost:3000/api/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))\"",
+        ]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -81,8 +87,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - uploads:/app/uploads
     healthcheck:
-      test: ["CMD", "node", "dist/worker/healthcheck.js"]
+      test: ["CMD-SHELL", "node dist/src/healthcheck.js"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -104,10 +112,16 @@ services:
       BACKUP_CRON: "0 3 * * *"
       S3_ENDPOINT: ${S3_ENDPOINT}
       S3_BUCKET: ${S3_BACKUP_BUCKET}
-    command: ["node", "dist/worker/index.js", "scheduler"]
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - uploads:/app/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "node dist/src/healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
     networks:
       - longyuan
 
@@ -115,6 +129,7 @@ volumes:
   postgres_data:
   caddy_data:
   caddy_config:
+  uploads:
 
 networks:
   longyuan:

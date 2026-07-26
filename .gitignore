@@ -26,7 +26,8 @@ node_modules/
 .yarnrc.yml
 package-lock.json
 yarn.lock
-pnpm-lock.yaml
+# pnpm-lock.yaml 已纳入版本控制，保证 CI / Docker 构建可复现
+!pnpm-lock.yaml
 
 # Python
 __pycache__/

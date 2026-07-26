@@ -1,0 +1,31 @@
+:root {
+  /* Background & Surface */
+  --color-bg: #F5F7F3;
+  --color-surface: #FFFFFF;
+
+  /* Text */
+  --color-text: #1C2421;
+  --color-text-muted: #66716C;
+
+  /* Border */
+  --color-border: #D7DED9;
+
+  /* Brand: Celadon */
+  --color-celadon-900: #17322D;
+  --color-celadon-700: #345A4F;
+  --color-celadon-500: #6E9283;
+  --color-celadon-200: #C9D9D1;
+  --color-celadon-100: #E7EFEB;
+
+  /* Accent: Kiln */
+  --color-kiln-700: #8C4A2D;
+  --color-kiln-500: #B86A3B;
+  --color-kiln-100: #F3E5DC;
+
+  /* Status */
+  --color-status-success: #2F6A4F;
+  --color-status-warning: #9A6A25;
+  --color-status-risk: #9D3E32;
+  --color-status-info: #3F6382;
+  --color-status-neutral: #69736F;
+}

@@ -1,0 +1,92 @@
+name: Phase 1B Static UI Shell CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: "20"
+  PNPM_VERSION: "9.12.0"
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build packages
+        run: pnpm build
+
+      - name: Run unit / component tests
+        run: pnpm test
+
+      - name: UI forbidden scan
+        run: bash scripts/lint-ui-forbidden.sh
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate local .env
+        run: |
+          cp .env.example .env
+          sed -i 's/change-me/ci-test/g' .env
+          sed -i 's|APP_ROLE=web|APP_ROLE=web|' .env
+          echo "UPLOAD_DIR=/app/uploads" >> .env
+
+      - name: Build images
+        run: docker compose build
+
+      - name: Start services
+        run: docker compose up -d
+
+      - name: Wait for web healthcheck
+        run: |
+          for i in {1..30}; do
+            if docker compose ps web | grep -q healthy; then
+              echo "web is healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs web
+          exit 1
+
+      - name: Check worker and scheduler health
+        run: |
+          docker compose ps worker | grep -q healthy
+          docker compose ps scheduler | grep -q healthy
+
+      - name: Verify /api/health via gateway
+        run: |
+          curl -fsS http://localhost/api/health
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

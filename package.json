@@ -1,0 +1,22 @@
+{
+  "name": "longyuan-website",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "dev:web": "pnpm -F @longyuan/web dev",
+    "dev:worker": "pnpm -F @longyuan/worker dev",
+    "build": "pnpm -F @longyuan/shared build && pnpm -F @longyuan/web build && pnpm -F @longyuan/worker build",
+    "test": "pnpm -F @longyuan/shared test && pnpm -F @longyuan/web test && pnpm -F @longyuan/worker test",
+    "lint:forbidden": "bash scripts/lint-ui-forbidden.sh",
+    "typecheck": "pnpm -F @longyuan/shared typecheck && pnpm -F @longyuan/web typecheck && pnpm -F @longyuan/worker typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
