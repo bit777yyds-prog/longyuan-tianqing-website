@@ -34,4 +34,4 @@ WORKDIR /app/src/web
 EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=5s --retries=5 \
   CMD node -e "fetch('http://localhost:3000/api/health').then(r => { if (!r.ok) throw new Error('healthcheck failed') }).catch(() => process.exit(1))"
-CMD ["node", "/app/node_modules/next/dist/bin/next", "start"]
+CMD ["/app/node_modules/.bin/next", "start"]
