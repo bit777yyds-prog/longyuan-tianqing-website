@@ -5,10 +5,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TARGET="${ROOT}/src/web"
 FAIL=0
 
+# Exclude dependency and build output directories.
+EXCLUDE="--exclude-dir=node_modules --exclude-dir=.next --exclude-dir=out --exclude-dir=dist --exclude-dir=playwright-report --exclude-dir=coverage"
+
 echo "== UI 禁止项扫描 =="
 
 # 1. 禁止蓝紫渐变、霓虹渐变等 AI 科技风
-if grep -RinE 'linear-gradient|radial-gradient|conic-gradient' \
+if grep -RinE $EXCLUDE 'linear-gradient|radial-gradient|conic-gradient' \
   --include='*.css' --include='*.tsx' --include='*.ts' "${TARGET}"; then
   echo "FAIL  发现渐变背景"
   FAIL=1
@@ -17,7 +20,7 @@ else
 fi
 
 # 2. 禁止粒子 / 动画背景关键词
-if grep -RinE 'particle|particles|sparkle|star-field|galaxy|nebula|aurora' \
+if grep -RinE $EXCLUDE 'particle|particles|sparkle|star-field|galaxy|nebula|aurora' \
   --include='*.css' --include='*.tsx' --include='*.ts' "${TARGET}"; then
   echo "FAIL  发现粒子/星云/极光等背景"
   FAIL=1
@@ -26,7 +29,7 @@ else
 fi
 
 # 3. 禁止机器人头像 / 拟人化 Agent 图标
-if grep -RinE 'robot|bot-avatar|ai-avatar|agent-avatar|<Avatar[^>]*src.*robot|<img[^>]*robot' \
+if grep -RinE $EXCLUDE 'robot|bot-avatar|ai-avatar|agent-avatar|<Avatar[^>]*src.*robot|<img[^>]*robot' \
   --include='*.tsx' --include='*.ts' "${TARGET}"; then
   echo "FAIL  发现机器人头像"
   FAIL=1
@@ -35,7 +38,7 @@ else
 fi
 
 # 4. 禁止 3D 青瓷旋转 / three.js / canvas 3D
-if grep -RinE 'three|@react-three|ThreeJS|WebGL|canvas.*3d|rotate-3d|preserve-3d' \
+if grep -RinE $EXCLUDE 'three|@react-three|ThreeJS|WebGL|canvas.*3d|rotate-3d|preserve-3d' \
   --include='*.tsx' --include='*.ts' "${TARGET}"; then
   echo "FAIL  发现 3D/WebGL 元素"
   FAIL=1
@@ -44,7 +47,7 @@ else
 fi
 
 # 5. 禁止黑底荧光绿 / 霓虹色文本
-if grep -RinE '#0f0|#00ff00|#39ff14|bg-black.*text-green-400|text-green-400.*bg-black' \
+if grep -RinE $EXCLUDE '#0f0|#00ff00|#39ff14|bg-black.*text-green-400|text-green-400.*bg-black' \
   --include='*.css' --include='*.tsx' --include='*.ts' "${TARGET}"; then
   echo "FAIL  发现黑底荧光绿或霓虹色"
   FAIL=1
@@ -53,7 +56,7 @@ else
 fi
 
 # 6. 禁止 glassmorphism / 大面积模糊阴影
-if grep -RinE 'backdrop-blur|backdrop-filter|glassmorphism' \
+if grep -RinE $EXCLUDE 'backdrop-blur|backdrop-filter|glassmorphism' \
   --include='*.css' --include='*.tsx' --include='*.ts' "${TARGET}"; then
   echo "FAIL  发现玻璃拟态效果"
   FAIL=1
@@ -62,7 +65,7 @@ else
 fi
 
 # 7. 禁止蓝紫霓虹色值
-if grep -RinE '#8b5cf6|#6366f1|#a855f7|#c026d3|#4f46e5|#7c3aed' \
+if grep -RinE $EXCLUDE '#8b5cf6|#6366f1|#a855f7|#c026d3|#4f46e5|#7c3aed' \
   --include='*.css' --include='*.tsx' --include='*.ts' "${TARGET}"; then
   echo "FAIL  发现蓝紫 AI 色值"
   FAIL=1
@@ -71,7 +74,7 @@ else
 fi
 
 # 8. 禁止轮播 / 自动播放视频
-if grep -RinE 'carousel|slider.*auto|autoplay|video.*autoPlay|<video' \
+if grep -RinE $EXCLUDE 'carousel|slider.*auto|autoplay|video.*autoPlay|<video' \
   --include='*.tsx' --include='*.ts' "${TARGET}"; then
   echo "FAIL  发现轮播或自动播放视频"
   FAIL=1
@@ -80,7 +83,7 @@ else
 fi
 
 # 9. 禁止虚构数据提示（排行榜/积分/智能推荐）
-if grep -RinE '排行榜|积分榜|贡献积分|智能推荐|AI 助手|AI 聊天|聊天窗口' \
+if grep -RinE $EXCLUDE '排行榜|积分榜|贡献积分|智能推荐|AI 助手|AI 聊天|聊天窗口' \
   --include='*.tsx' --include='*.ts' "${TARGET}"; then
   echo "FAIL  发现排行榜/积分/聊天窗口等禁止文案"
   FAIL=1
