@@ -92,8 +92,18 @@ jobs:
 
       - name: Check worker and scheduler health
         run: |
-          docker compose ps worker | grep -q healthy
-          docker compose ps scheduler | grep -q healthy
+          for svc in worker scheduler; do
+            for i in {1..30}; do
+              if docker compose ps "$svc" | grep -q healthy; then
+                echo "$svc is healthy"
+                break 2
+              fi
+              sleep 2
+            done
+            echo "$svc did not become healthy"
+            docker compose logs "$svc"
+            exit 1
+          done
 
       - name: Verify /api/health via gateway
         run: |
