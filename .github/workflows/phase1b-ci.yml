@@ -63,7 +63,18 @@ jobs:
         run: docker compose build
 
       - name: Start services
-        run: docker compose up -d
+        run: |
+          docker compose up -d || {
+            echo "=== docker compose ps ==="
+            docker compose ps
+            echo "=== web logs ==="
+            docker compose logs web
+            echo "=== worker logs ==="
+            docker compose logs worker
+            echo "=== scheduler logs ==="
+            docker compose logs scheduler
+            exit 1
+          }
 
       - name: Wait for web healthcheck
         run: |
