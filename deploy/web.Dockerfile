@@ -28,9 +28,10 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV APP_ROLE=web
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
-COPY --from=builder /app/src/web/.next/standalone /app/standalone
-WORKDIR /app/standalone
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/src/web ./src/web
+WORKDIR /app/src/web
 EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=5s --retries=5 \
   CMD node -e "fetch('http://localhost:3000/api/health').then(r => { if (!r.ok) throw new Error('healthcheck failed') }).catch(() => process.exit(1))"
-CMD ["node", "server.js"]
+CMD ["node", "/app/node_modules/next/dist/bin/next", "start"]
