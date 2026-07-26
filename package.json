@@ -14,7 +14,7 @@
     "build": "pnpm -F @longyuan/shared build && pnpm -F @longyuan/web build && pnpm -F @longyuan/worker build",
     "test": "pnpm -F @longyuan/shared test && pnpm -F @longyuan/web test && pnpm -F @longyuan/worker test",
     "lint:forbidden": "bash scripts/lint-ui-forbidden.sh",
-    "typecheck": "pnpm -F @longyuan/shared typecheck && pnpm -F @longyuan/web typecheck && pnpm -F @longyuan/worker typecheck"
+    "typecheck": "pnpm -F @longyuan/shared build && pnpm -F @longyuan/web typecheck && pnpm -F @longyuan/worker typecheck"
   },
   "devDependencies": {
     "typescript": "^5.6.3"
