@@ -14,10 +14,11 @@ RUN pnpm install
 FROM base AS runner
 WORKDIR /app/src/worker
 ENV NODE_ENV=production
+ENV PATH="/app/node_modules/.bin:$PATH"
 COPY --from=deps /app/node_modules /app/node_modules
 COPY src/shared /app/src/shared
 COPY src/worker .
-RUN pnpm exec tsc
+RUN tsc
 HEALTHCHECK --interval=30s --timeout=10s --retries=5 \
   CMD node dist/src/healthcheck.js
 CMD ["node", "dist/src/index.js"]
