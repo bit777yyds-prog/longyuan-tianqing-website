@@ -13,17 +13,21 @@
   },
   "dependencies": {
     "@longyuan/shared": "workspace:*",
+    "better-auth": "^1.6.25",
+    "lucide-react": "^1.26.0",
     "next": "^15.0.0",
+    "pg": "^8.22.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.48.0",
     "@testing-library/jest-dom": "^6.6.2",
     "@testing-library/react": "^16.0.1",
     "@types/node": "^20",
+    "@types/pg": "^8.20.0",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "@playwright/test": "^1.48.0",
     "@vitejs/plugin-react": "^4.3.2",
     "autoprefixer": "^10.4.20",
     "eslint": "^8",
