@@ -49,6 +49,20 @@
    ```
 6. 访问 `http://localhost/api/health`。
 
+### 创建首个管理员
+
+全新数据库默认没有管理员，公开注册也保持关闭。容器健康后，仅执行一次：
+
+```bash
+docker compose exec \
+  -e BOOTSTRAP_ADMIN_EMAIL=admin@example.com \
+  -e BOOTSTRAP_ADMIN_NAME=系统管理员 \
+  -e BOOTSTRAP_ADMIN_PASSWORD='ReplaceMe2026Strong' \
+  web pnpm bootstrap:admin
+```
+
+请先替换示例密码。密码至少 12 位并包含大小写字母和数字。脚本使用数据库事务和 advisory lock；一旦存在有效管理员就会拒绝再次引导，并写入审计日志。
+
 > 不要把真实 API 密钥、数据库密码或生产凭证填入 `.env` 并提交。
 
 ## 常用命令
