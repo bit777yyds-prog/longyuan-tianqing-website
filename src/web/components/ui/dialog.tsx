@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from './button';
 
@@ -39,7 +40,7 @@ export function Dialog({ open, onClose, title, description, children }: DialogPr
         role="dialog"
         aria-modal="true"
         aria-labelledby="dialog-title"
-        className="w-full max-w-lg rounded-lg bg-surface p-6 shadow-lg"
+        className="w-full max-w-lg rounded-sm bg-surface p-6 shadow-lg"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -51,7 +52,7 @@ export function Dialog({ open, onClose, title, description, children }: DialogPr
             )}
           </div>
           <Button variant="secondary" size="sm" onClick={onClose} aria-label="关闭">
-            ×
+            <X size={16} aria-hidden="true" />
           </Button>
         </div>
         <div className="mt-4">{children}</div>

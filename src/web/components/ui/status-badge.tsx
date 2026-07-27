@@ -39,6 +39,13 @@ const statusMap: Record<string, { label: string; classes: string }> = {
   running: { label: '运行中', classes: 'bg-status-info/10 text-status-info' },
   completed: { label: '已完成', classes: 'bg-status-success/10 text-status-success' },
   failed: { label: '运行失败', classes: 'bg-status-risk/10 text-status-risk' },
+  active: { label: '正常', classes: 'bg-status-success/10 text-status-success' },
+  invited: { label: '待激活', classes: 'bg-status-warning/10 text-status-warning' },
+  disabled: { label: '已停用', classes: 'bg-status-risk/10 text-status-risk' },
+  valid_invitation: { label: '有效', classes: 'bg-status-success/10 text-status-success' },
+  used_invitation: { label: '已使用', classes: 'bg-status-info/10 text-status-info' },
+  revoked_invitation: { label: '已撤销', classes: 'bg-status-risk/10 text-status-risk' },
+  expired_invitation: { label: '已过期', classes: 'bg-status-neutral/10 text-status-neutral' },
 };
 
 export interface StatusBadgeProps extends React.HTMLAttributes<HTMLSpanElement> {

@@ -1,15 +1,29 @@
+import { headers } from 'next/headers';
+import { redirect } from 'next/navigation';
+import { AdminHeader } from '@/components/layout/admin-header';
 import { AdminSidebar } from '@/components/layout/admin-sidebar';
+import { requireAuthenticatedAdmin } from '@/server/auth/authorization';
 
-export default function AdminLayout({
+export const dynamic = 'force-dynamic';
+
+export default async function AdminLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  let admin;
+  try {
+    admin = await requireAuthenticatedAdmin(await headers());
+  } catch {
+    redirect('/login');
+  }
+
   return (
     <div className="min-h-screen bg-bg">
-      <div className="mx-auto flex max-w-admin flex-col gap-6 px-4 py-8 md:flex-row md:px-8 lg:px-16">
+      <AdminHeader name={admin.name} role={admin.role} />
+      <div className="mx-auto flex max-w-[1600px] flex-col lg:flex-row">
         <AdminSidebar />
-        <main className="min-w-0 flex-1">{children}</main>
+        <main className="min-w-0 flex-1 px-4 py-6 md:px-8 md:py-8">{children}</main>
       </div>
     </div>
   );
