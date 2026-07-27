@@ -16,6 +16,7 @@ export default defineConfig({
     include: [
       'components/**/*.test.{ts,tsx}',
       'lib/**/*.test.{ts,tsx}',
+      'server/**/*.test.{ts,tsx}',
     ],
   },
 });
