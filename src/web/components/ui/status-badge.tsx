@@ -42,6 +42,8 @@ const statusMap: Record<string, { label: string; classes: string }> = {
   active: { label: '正常', classes: 'bg-status-success/10 text-status-success' },
   invited: { label: '待激活', classes: 'bg-status-warning/10 text-status-warning' },
   disabled: { label: '已停用', classes: 'bg-status-risk/10 text-status-risk' },
+  submitted: { label: '已提交', classes: 'bg-status-warning/10 text-status-warning' },
+  withdrawn: { label: '已撤回', classes: 'bg-celadon-100 text-status-neutral' },
   valid_invitation: { label: '有效', classes: 'bg-status-success/10 text-status-success' },
   used_invitation: { label: '已使用', classes: 'bg-status-info/10 text-status-info' },
   revoked_invitation: { label: '已撤销', classes: 'bg-status-risk/10 text-status-risk' },

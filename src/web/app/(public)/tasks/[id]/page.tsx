@@ -1,12 +1,10 @@
 import { notFound } from 'next/navigation';
-import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Badge } from '@/components/ui/badge';
 import { createDatabaseClient } from '@/server/db/client';
 import { SqlTaskRepository } from '@/server/db/task-repository';
 import { TaskService } from '@/server/domain/task-service';
+import { TaskApplicationPanel } from './task-application-panel';
 
 interface TaskDetailPageProps {
   params: Promise<{ id: string }>;
@@ -75,26 +73,7 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
         </Section>
 
         <Section title="申请前确认">
-          <div className="space-y-3 rounded-lg border border-border bg-surface p-4">
-            <Checkbox
-              label="我确认有权提交所提供材料"
-              description="提交内容不侵犯第三方版权或隐私。"
-            />
-            <Checkbox
-              label="我同意按规则使用 AI 辅助"
-              description="不将内部或保密材料上传至外部服务。"
-            />
-            <Checkbox
-              label="我接受任务的报酬与版权约定"
-              description="公开署名方式以任务说明为准。"
-            />
-          </div>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Button>申请任务</Button>
-            <Button variant="secondary" asChild>
-              <Link href="/tasks">返回列表</Link>
-            </Button>
-          </div>
+          <TaskApplicationPanel taskId={task.id} />
         </Section>
 
         <Section title="常见问题">
