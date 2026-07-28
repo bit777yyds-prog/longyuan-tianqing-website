@@ -16,6 +16,7 @@ function createAuth() {
     appName: '龙渊天青',
     secret: sessionSecret,
     baseURL: process.env.APP_BASE_URL,
+    trustedOrigins: buildTrustedOrigins(process.env.APP_BASE_URL),
     database: getDatabasePool(),
     secondaryStorage: new EncryptedPostgresSecondaryStorage(db, encryptionKey),
     emailAndPassword: {
@@ -146,6 +147,19 @@ function requireSecret(name: 'SESSION_SECRET' | 'ENCRYPTION_KEY'): string {
     throw new Error(`${name} must contain at least 32 non-placeholder characters`);
   }
   return value;
+}
+
+function buildTrustedOrigins(baseURL: string | undefined): string[] {
+  const origins = new Set<string>();
+  if (baseURL) origins.add(new URL(baseURL).origin);
+
+  if (process.env.APP_ENV !== 'production') {
+    const port = baseURL ? new URL(baseURL).port || '3000' : '3000';
+    origins.add(`http://localhost:${port}`);
+    origins.add(`http://127.0.0.1:${port}`);
+  }
+
+  return [...origins];
 }
 
 function sha256(value: string): string {
