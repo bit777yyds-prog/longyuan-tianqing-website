@@ -40,6 +40,7 @@ export interface TaskRepository {
   createTask(actorId: string, input: NormalizedCreateTaskInput): Promise<TaskRecord>;
   listTasks(input: { includeDrafts: boolean }): Promise<TaskRecord[]>;
   findTask(id: string, input: { includeDrafts: boolean }): Promise<TaskRecord | null>;
+  updateTaskStatus(actorId: string, id: string, status: SharedTaskStatus): Promise<TaskRecord | null>;
 }
 
 export interface NormalizedCreateTaskInput extends CreateTaskInput {
@@ -61,6 +62,15 @@ export class TaskService {
 
   findTask(id: string, input: { includeDrafts: boolean }): Promise<TaskRecord | null> {
     return this.repository.findTask(id, input);
+  }
+
+  async updateTaskStatus(actorId: string, id: string, status: SharedTaskStatus): Promise<TaskRecord | null> {
+    if (!isManagedTaskStatus(status)) throw new Error('Task status transition is not supported');
+    const current = await this.repository.findTask(id, { includeDrafts: true });
+    if (!current) return null;
+    if (current.status === status) return current;
+    assertTaskStatusTransition(current.status, status);
+    return this.repository.updateTaskStatus(actorId, id, status);
   }
 }
 
@@ -126,4 +136,19 @@ function normalizeSlots(value: number | undefined): number {
     throw new Error('Slots total must be an integer between 1 and 999');
   }
   return value;
+}
+
+function isManagedTaskStatus(status: SharedTaskStatus): boolean {
+  return status === TaskStatus.DRAFT || status === TaskStatus.OPEN || status === TaskStatus.CLOSED;
+}
+
+function assertTaskStatusTransition(current: SharedTaskStatus, next: SharedTaskStatus): void {
+  const allowed: Record<string, SharedTaskStatus[]> = {
+    [TaskStatus.DRAFT]: [TaskStatus.OPEN],
+    [TaskStatus.OPEN]: [TaskStatus.CLOSED],
+    [TaskStatus.CLOSED]: [TaskStatus.OPEN],
+  };
+  if (!allowed[current]?.includes(next)) {
+    throw new Error('Task status transition is not supported');
+  }
 }
