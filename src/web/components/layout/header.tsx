@@ -31,8 +31,8 @@ export function Header() {
           ))}
         </nav>
         <div className="hidden md:block">
-          <Button size="sm" variant="secondary">
-            登录
+          <Button asChild size="sm" variant="secondary">
+            <Link href="/login">登录</Link>
           </Button>
         </div>
         <button
@@ -60,8 +60,8 @@ export function Header() {
                 {item.label}
               </Link>
             ))}
-            <Button size="sm" variant="secondary" className="mt-2 w-full">
-              登录
+            <Button asChild size="sm" variant="secondary" className="mt-2 w-full">
+              <Link href="/login" onClick={() => setMenuOpen(false)}>登录</Link>
             </Button>
           </nav>
         </div>

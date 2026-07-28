@@ -50,8 +50,8 @@ const config: Config = {
       },
       borderRadius: {
         'sm': '6px',
-        'md': '10px',
-        'lg': '16px',
+        'md': '8px',
+        'lg': '8px',
       },
       fontSize: {
         'display': ['3.5rem', { lineHeight: '1.1' }],

@@ -1,18 +1,22 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { tasks } from '@/lib/fixtures/tasks';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Badge } from '@/components/ui/badge';
+import { createDatabaseClient } from '@/server/db/client';
+import { SqlTaskRepository } from '@/server/db/task-repository';
+import { TaskService } from '@/server/domain/task-service';
 
 interface TaskDetailPageProps {
   params: Promise<{ id: string }>;
 }
 
+export const dynamic = 'force-dynamic';
+
 export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
   const { id } = await params;
-  const task = tasks.find((t) => t.id === id);
+  const task = await new TaskService(new SqlTaskRepository(createDatabaseClient())).findTask(id, { includeDrafts: false });
   if (!task) notFound();
 
   return (
