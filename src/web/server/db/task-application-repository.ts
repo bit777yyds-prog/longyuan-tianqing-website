@@ -1,5 +1,7 @@
 import {
   DuplicateTaskApplicationError,
+  TaskApplicationDecision,
+  TaskApplicationDecisionError,
   TaskApplicationRecord,
   TaskApplicationRepository,
   TaskNotOpenForApplicationsError,
@@ -18,6 +20,10 @@ interface TaskApplicationRow {
   message: string;
   created_at: Date;
   updated_at: Date;
+}
+
+interface ApplicationDecisionRow extends TaskApplicationRow {
+  task_status: string;
 }
 
 export class SqlTaskApplicationRepository implements TaskApplicationRepository {
@@ -89,6 +95,83 @@ export class SqlTaskApplicationRepository implements TaskApplicationRepository {
       [input.taskId ?? null]
     );
     return result.rows.map(mapApplication);
+  }
+
+  async decideApplication(input: {
+    actorId: string;
+    applicationId: string;
+    decision: TaskApplicationDecision;
+  }): Promise<TaskApplicationRecord | null> {
+    return this.db.transaction(async (tx) => {
+      const selected = await tx.query<ApplicationDecisionRow>(
+        `
+          SELECT
+            ta.*,
+            t.title AS task_title,
+            t.status AS task_status,
+            au.name AS applicant_name,
+            au.email AS applicant_email
+          FROM task_applications ta
+          JOIN tasks t ON t.id = ta.task_id
+          JOIN app_users au ON au.id = ta.applicant_user_id
+          WHERE ta.id = $1
+          FOR UPDATE OF ta, t
+        `,
+        [input.applicationId]
+      );
+      const application = selected.rows[0];
+      if (!application) return null;
+      if (application.status !== 'submitted') {
+        throw new TaskApplicationDecisionError('Application has already been decided');
+      }
+
+      if (input.decision === 'accepted') {
+        if (application.task_status !== 'open') {
+          throw new TaskNotOpenForApplicationsError('Task is not open');
+        }
+        await tx.query(
+          `
+            INSERT INTO task_assignments (task_id, actor_id, assignment_role, status)
+            VALUES ($1, $2, 'executor', 'assigned')
+            ON CONFLICT (task_id, actor_id, assignment_role) DO NOTHING
+          `,
+          [application.task_id, application.applicant_actor_id]
+        );
+        await tx.query('UPDATE tasks SET status = $2, owner_actor_id = $3, updated_at = now() WHERE id = $1', [
+          application.task_id,
+          'assigned',
+          application.applicant_actor_id,
+        ]);
+      }
+
+      const result = await tx.query<TaskApplicationRow>(
+        `
+          UPDATE task_applications
+          SET status = $2
+          WHERE id = $1
+          RETURNING
+            task_applications.*,
+            (SELECT title FROM tasks WHERE id = task_applications.task_id) AS task_title,
+            (SELECT name FROM app_users WHERE id = task_applications.applicant_user_id) AS applicant_name,
+            (SELECT email FROM app_users WHERE id = task_applications.applicant_user_id) AS applicant_email
+        `,
+        [input.applicationId, input.decision]
+      );
+
+      const decided = mapApplication(result.rows[0]);
+      await tx.query(
+        `
+          INSERT INTO audit_logs (actor_id, action, object_type, object_id, after_data)
+          VALUES ($1, 'task.application_decided', 'task_application', $2, $3::jsonb)
+        `,
+        [
+          input.actorId,
+          decided.id,
+          JSON.stringify({ decision: decided.status, taskId: decided.taskId, applicantActorId: decided.applicantActorId }),
+        ]
+      );
+      return decided;
+    });
   }
 }
 

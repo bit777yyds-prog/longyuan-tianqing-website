@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Search } from 'lucide-react';
+import { Check, Search, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 
 type TaskApplicationRow = {
@@ -20,6 +21,7 @@ export function ApplicationsWorkspace() {
   const [applications, setApplications] = useState<TaskApplicationRow[]>([]);
   const [query, setQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [actionApplicationId, setActionApplicationId] = useState<string>();
   const [error, setError] = useState<string>();
 
   useEffect(() => {
@@ -43,6 +45,27 @@ export function ApplicationsWorkspace() {
       || application.applicantEmail.toLowerCase().includes(term)
     );
   }), [applications, query]);
+
+  async function decideApplication(applicationId: string, decision: 'accepted' | 'rejected') {
+    setError(undefined);
+    setActionApplicationId(applicationId);
+    try {
+      const response = await fetch(`/api/task-applications/${applicationId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ decision }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? '申请处理失败');
+      setApplications((current) => current.map((application) => (
+        application.id === applicationId ? payload.application : application
+      )));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '申请处理失败');
+    } finally {
+      setActionApplicationId(undefined);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-[1280px]">
@@ -79,6 +102,7 @@ export function ApplicationsWorkspace() {
                 <th className="px-4 py-3 font-medium">状态</th>
                 <th className="px-4 py-3 font-medium">申请说明</th>
                 <th className="px-4 py-3 font-medium">提交时间</th>
+                <th className="px-4 py-3 text-right font-medium">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -98,10 +122,17 @@ export function ApplicationsWorkspace() {
                     <p className="line-clamp-3">{application.message}</p>
                   </td>
                   <td className="px-4 py-3 text-text-muted">{new Date(application.createdAt).toLocaleString('zh-CN')}</td>
+                  <td className="px-4 py-3">
+                    <ApplicationActions
+                      application={application}
+                      isLoading={actionApplicationId === application.id}
+                      onDecide={decideApplication}
+                    />
+                  </td>
                 </tr>
               ))}
-              {isLoading && <tr><td colSpan={5} className="px-4 py-10 text-center text-text-muted">正在加载申请...</td></tr>}
-              {!isLoading && filteredApplications.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-text-muted">暂无符合条件的申请</td></tr>}
+              {isLoading && <tr><td colSpan={6} className="px-4 py-10 text-center text-text-muted">正在加载申请...</td></tr>}
+              {!isLoading && filteredApplications.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-text-muted">暂无符合条件的申请</td></tr>}
             </tbody>
           </table>
         </div>
@@ -112,4 +143,28 @@ export function ApplicationsWorkspace() {
 
 function Summary({ label, value }: { label: string; value: number }) {
   return <div className="border border-border bg-surface px-4 py-3"><p className="text-xs text-text-muted">{label}</p><p className="mt-1 text-2xl font-semibold text-text">{value}</p></div>;
+}
+
+function ApplicationActions({
+  application,
+  isLoading,
+  onDecide,
+}: {
+  application: TaskApplicationRow;
+  isLoading: boolean;
+  onDecide: (applicationId: string, decision: 'accepted' | 'rejected') => void;
+}) {
+  if (application.status !== 'submitted') {
+    return <p className="text-right text-xs text-text-muted">已处理</p>;
+  }
+  return (
+    <div className="flex justify-end gap-2">
+      <Button type="button" size="sm" className="gap-1.5" isLoading={isLoading} onClick={() => onDecide(application.id, 'accepted')}>
+        <Check size={14} aria-hidden="true" />通过
+      </Button>
+      <Button type="button" size="sm" variant="danger" className="gap-1.5" isLoading={isLoading} onClick={() => onDecide(application.id, 'rejected')}>
+        <X size={14} aria-hidden="true" />驳回
+      </Button>
+    </div>
+  );
 }
