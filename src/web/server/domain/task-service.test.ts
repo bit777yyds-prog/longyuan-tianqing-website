@@ -24,6 +24,7 @@ describe('TaskService', () => {
       })),
       listTasks: vi.fn(),
       findTask: vi.fn(),
+      updateTaskStatus: vi.fn(),
     };
 
     const task = await new TaskService(repository).createTask('actor-id', {
@@ -55,6 +56,7 @@ describe('TaskService', () => {
       createTask: vi.fn(),
       listTasks: vi.fn(),
       findTask: vi.fn(),
+      updateTaskStatus: vi.fn(),
     };
 
     expect(() => new TaskService(repository).createTask('actor-id', {
@@ -69,4 +71,53 @@ describe('TaskService', () => {
       qualifications: ['认真'],
     })).toThrow('Acceptance criteria');
   });
+
+  it('publishes drafts and closes open tasks', async () => {
+    const repository: TaskRepository = {
+      createTask: vi.fn(),
+      listTasks: vi.fn(),
+      findTask: vi.fn(async () => taskRecord({ status: 'draft' })),
+      updateTaskStatus: vi.fn(async (_actorId, _id, status) => taskRecord({ status })),
+    };
+
+    const service = new TaskService(repository);
+    await expect(service.updateTaskStatus('actor-id', 'task-id', 'open')).resolves.toMatchObject({ status: 'open' });
+
+    vi.mocked(repository.findTask).mockResolvedValueOnce(taskRecord({ status: 'open' }));
+    await expect(service.updateTaskStatus('actor-id', 'task-id', 'closed')).resolves.toMatchObject({ status: 'closed' });
+  });
+
+  it('rejects unsupported task status transitions', async () => {
+    const repository: TaskRepository = {
+      createTask: vi.fn(),
+      listTasks: vi.fn(),
+      findTask: vi.fn(async () => taskRecord({ status: 'draft' })),
+      updateTaskStatus: vi.fn(),
+    };
+
+    await expect(new TaskService(repository).updateTaskStatus('actor-id', 'task-id', 'closed'))
+      .rejects.toThrow('Task status transition is not supported');
+    expect(repository.updateTaskStatus).not.toHaveBeenCalled();
+  });
 });
+
+function taskRecord(input: { status: 'draft' | 'open' | 'closed' }) {
+  return {
+    id: 'task-id',
+    title: '整理龙泉窑资料',
+    project: '龙渊天青',
+    type: '文献整理',
+    deliverable: '结构化表格',
+    deadline: '待定',
+    reward: '按任务约定结算',
+    status: input.status,
+    slotsRemaining: 1,
+    description: '整理公开资料',
+    acceptanceCriteria: ['每条资料有出处'],
+    aiRules: ['不得上传内部资料'],
+    qualifications: ['能阅读文献'],
+    faq: [],
+    createdAt: new Date('2026-07-27T00:00:00.000Z').toISOString(),
+    updatedAt: new Date('2026-07-27T00:00:00.000Z').toISOString(),
+  };
+}

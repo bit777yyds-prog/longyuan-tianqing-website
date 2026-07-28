@@ -92,7 +92,7 @@ export class SqlTaskRepository implements TaskRepository {
         SELECT t.*, p.name AS project_name
         FROM tasks t
         JOIN projects p ON p.id = t.project_id
-        WHERE ($1::boolean OR t.status <> 'draft')
+        WHERE ($1::boolean OR t.status = 'open')
         ORDER BY t.created_at DESC
         LIMIT 500
       `,
@@ -108,12 +108,39 @@ export class SqlTaskRepository implements TaskRepository {
         FROM tasks t
         JOIN projects p ON p.id = t.project_id
         WHERE t.id = $1
-          AND ($2::boolean OR t.status <> 'draft')
+          AND ($2::boolean OR t.status = 'open')
         LIMIT 1
       `,
       [id, input.includeDrafts]
     );
     return result.rows[0] ? mapTask(result.rows[0]) : null;
+  }
+
+  async updateTaskStatus(actorId: string, id: string, status: TaskRecord['status']): Promise<TaskRecord | null> {
+    return this.db.transaction(async (tx) => {
+      const result = await tx.query<TaskRow>(
+        `
+          UPDATE tasks
+          SET status = $2, updated_at = now()
+          WHERE id = $1
+          RETURNING
+            tasks.*,
+            (SELECT name FROM projects WHERE id = tasks.project_id) AS project_name
+        `,
+        [id, status]
+      );
+      if (!result.rows[0]) return null;
+
+      const task = mapTask(result.rows[0]);
+      await tx.query(
+        `
+          INSERT INTO audit_logs (actor_id, action, object_type, object_id, after_data)
+          VALUES ($1, 'task.status_changed', 'task', $2, $3::jsonb)
+        `,
+        [actorId, task.id, JSON.stringify({ status: task.status, title: task.title })]
+      );
+      return task;
+    });
   }
 }
 

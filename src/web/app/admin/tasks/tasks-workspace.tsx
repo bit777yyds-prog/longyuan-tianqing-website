@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { FilePlus2, Search } from 'lucide-react';
+import { Archive, FilePlus2, RotateCcw, Search, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -46,6 +46,7 @@ export function TasksWorkspace() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [actionTaskId, setActionTaskId] = useState<string>();
   const [error, setError] = useState<string>();
 
   useEffect(() => {
@@ -103,6 +104,25 @@ export function TasksWorkspace() {
     }
   }
 
+  async function updateTaskStatus(taskId: string, nextStatus: 'open' | 'closed') {
+    setError(undefined);
+    setActionTaskId(taskId);
+    try {
+      const response = await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? '任务状态更新失败');
+      setTasks((current) => current.map((task) => task.id === taskId ? payload.task : task));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '任务状态更新失败');
+    } finally {
+      setActionTaskId(undefined);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-[1280px]">
       <div className="flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
@@ -153,12 +173,15 @@ export function TasksWorkspace() {
                   <td className="px-4 py-3 text-text-muted">{task.deliverable}</td>
                   <td className="px-4 py-3 text-text-muted">{task.deadline}</td>
                   <td className="px-4 py-3 text-text-muted">{task.slotsRemaining}</td>
-                  <td className="px-4 py-3 text-right">
-                    {task.status === 'draft' ? (
-                      <span className="text-xs text-text-muted">草稿未公开</span>
-                    ) : (
-                      <Link href={`/tasks/${task.id}`} className="text-sm font-medium text-celadon-700 hover:underline">查看前台</Link>
-                    )}
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-2">
+                      <TaskStatusAction task={task} isLoading={actionTaskId === task.id} onUpdate={updateTaskStatus} />
+                      {task.status === 'draft' ? (
+                        <span className="text-xs text-text-muted">未公开</span>
+                      ) : (
+                        <Link href={`/tasks/${task.id}`} className="whitespace-nowrap text-sm font-medium text-celadon-700 hover:underline">查看前台</Link>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -197,6 +220,39 @@ export function TasksWorkspace() {
 
 function Summary({ label, value }: { label: string; value: number }) {
   return <div className="border border-border bg-surface px-4 py-3"><p className="text-xs text-text-muted">{label}</p><p className="mt-1 text-2xl font-semibold text-text">{value}</p></div>;
+}
+
+function TaskStatusAction({
+  task,
+  isLoading,
+  onUpdate,
+}: {
+  task: TaskRow;
+  isLoading: boolean;
+  onUpdate: (taskId: string, nextStatus: 'open' | 'closed') => void;
+}) {
+  if (task.status === 'draft') {
+    return (
+      <Button type="button" size="sm" className="gap-1.5" isLoading={isLoading} onClick={() => onUpdate(task.id, 'open')}>
+        <Send size={14} aria-hidden="true" />发布
+      </Button>
+    );
+  }
+  if (task.status === 'open') {
+    return (
+      <Button type="button" size="sm" variant="secondary" className="gap-1.5" isLoading={isLoading} onClick={() => onUpdate(task.id, 'closed')}>
+        <Archive size={14} aria-hidden="true" />关闭
+      </Button>
+    );
+  }
+  if (task.status === 'closed') {
+    return (
+      <Button type="button" size="sm" variant="secondary" className="gap-1.5" isLoading={isLoading} onClick={() => onUpdate(task.id, 'open')}>
+        <RotateCcw size={14} aria-hidden="true" />重开
+      </Button>
+    );
+  }
+  return <span className="text-xs text-text-muted">不可变更</span>;
 }
 
 function Textarea({ label, name, placeholder, required }: { label: string; name: string; placeholder?: string; required?: boolean }) {
