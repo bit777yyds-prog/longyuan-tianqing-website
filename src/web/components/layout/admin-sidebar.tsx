@@ -3,11 +3,12 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, MailPlus, ScrollText, Settings, Users } from 'lucide-react';
+import { ClipboardList, LayoutDashboard, MailPlus, ScrollText, Settings, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const links = [
   { href: '/admin', label: '工作台', icon: LayoutDashboard },
+  { href: '/admin/tasks', label: '任务管理', icon: ClipboardList },
   { href: '/admin/invitations', label: '邀请管理', icon: MailPlus },
   { href: '/admin/users', label: '用户管理', icon: Users },
   { href: '/admin/audit', label: '审计日志', icon: ScrollText, disabled: true },

@@ -1,13 +1,18 @@
 import { TaskCard } from '@/components/business/task-card';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { tasks } from '@/lib/fixtures/tasks';
+import { createDatabaseClient } from '@/server/db/client';
+import { SqlTaskRepository } from '@/server/db/task-repository';
+import { TaskService } from '@/server/domain/task-service';
 
 export const metadata = {
   title: '任务 - 龙渊天青',
 };
 
-export default function TasksPage() {
+export const dynamic = 'force-dynamic';
+
+export default async function TasksPage() {
+  const tasks = await new TaskService(new SqlTaskRepository(createDatabaseClient())).listTasks({ includeDrafts: false });
   const types = Array.from(new Set(tasks.map((t) => t.type)));
 
   return (
@@ -34,11 +39,17 @@ export default function TasksPage() {
           />
         </div>
 
-        <div className="mt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {tasks.map((task) => (
-            <TaskCard key={task.id} task={task} />
-          ))}
-        </div>
+        {tasks.length === 0 ? (
+          <div className="mt-8 border-y border-border bg-surface px-4 py-12 text-center text-text-muted">
+            暂无已发布任务。
+          </div>
+        ) : (
+          <div className="mt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {tasks.map((task) => (
+              <TaskCard key={task.id} task={task} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
