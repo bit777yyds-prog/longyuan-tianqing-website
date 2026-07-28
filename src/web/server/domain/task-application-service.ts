@@ -24,11 +24,20 @@ export interface TaskApplicationRepository {
     message: string;
   }): Promise<TaskApplicationRecord>;
   listApplications(input: { taskId?: string }): Promise<TaskApplicationRecord[]>;
+  decideApplication(input: {
+    actorId: string;
+    applicationId: string;
+    decision: TaskApplicationDecision;
+  }): Promise<TaskApplicationRecord | null>;
 }
 
 export class DuplicateTaskApplicationError extends Error {}
 
 export class TaskNotOpenForApplicationsError extends Error {}
+
+export class TaskApplicationDecisionError extends Error {}
+
+export type TaskApplicationDecision = 'accepted' | 'rejected';
 
 export class TaskApplicationService {
   constructor(private readonly repository: TaskApplicationRepository) {}
@@ -47,6 +56,17 @@ export class TaskApplicationService {
 
   listApplications(input: { taskId?: string } = {}): Promise<TaskApplicationRecord[]> {
     return this.repository.listApplications(input);
+  }
+
+  decideApplication(input: {
+    actorId: string;
+    applicationId: string;
+    decision: TaskApplicationDecision;
+  }): Promise<TaskApplicationRecord | null> {
+    if (input.decision !== 'accepted' && input.decision !== 'rejected') {
+      throw new TaskApplicationDecisionError('Application decision is invalid');
+    }
+    return this.repository.decideApplication(input);
   }
 }
 
