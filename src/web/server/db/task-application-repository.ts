@@ -142,6 +142,27 @@ export class SqlTaskApplicationRepository implements TaskApplicationRepository {
           'assigned',
           application.applicant_actor_id,
         ]);
+        await tx.query(
+          `
+            WITH rejected AS (
+              UPDATE task_applications
+              SET status = 'rejected'
+              WHERE task_id = $1
+                AND id <> $2
+                AND status = 'submitted'
+              RETURNING id
+            )
+            INSERT INTO audit_logs (actor_id, action, object_type, object_id, after_data)
+            SELECT
+              $3,
+              'task.application_decided',
+              'task_application',
+              rejected.id,
+              jsonb_build_object('decision', 'rejected', 'taskId', $1, 'reason', 'task_assigned')
+            FROM rejected
+          `,
+          [application.task_id, input.applicationId, input.actorId]
+        );
       }
 
       const result = await tx.query<TaskApplicationRow>(

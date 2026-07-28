@@ -110,6 +110,23 @@ export class SqlTaskRepository implements TaskRepository {
 
   async updateTaskStatus(actorId: string, id: string, status: TaskRecord['status']): Promise<TaskRecord | null> {
     return this.db.transaction(async (tx) => {
+      const currentResult = await tx.query<TaskRow>(
+        `
+          SELECT t.*, p.name AS project_name
+          FROM tasks t
+          JOIN projects p ON p.id = t.project_id
+          WHERE t.id = $1
+          FOR UPDATE
+        `,
+        [id]
+      );
+      if (!currentResult.rows[0]) return null;
+
+      const currentTask = mapTask(currentResult.rows[0]);
+      if (currentTask.status === status) return currentTask;
+      assertTaskStatusTransition(currentTask.status, status);
+      await assertTaskCanReopen(tx, currentTask.id, currentTask.status, status);
+
       const result = await tx.query<TaskRow>(
         `
           UPDATE tasks
@@ -258,4 +275,36 @@ function toTaskStatus(value: string): TaskRecord['status'] {
     return value as TaskRecord['status'];
   }
   return TaskStatus.DRAFT;
+}
+
+function assertTaskStatusTransition(current: TaskRecord['status'], next: TaskRecord['status']): void {
+  const allowed: Record<string, TaskRecord['status'][]> = {
+    [TaskStatus.DRAFT]: [TaskStatus.OPEN],
+    [TaskStatus.OPEN]: [TaskStatus.CLOSED],
+    [TaskStatus.CLOSED]: [TaskStatus.OPEN],
+  };
+  if (!allowed[current]?.includes(next)) {
+    throw new Error('Task status transition is not supported');
+  }
+}
+
+async function assertTaskCanReopen(
+  tx: { query<T>(text: string, params?: unknown[]): Promise<{ rows: T[] }> },
+  taskId: string,
+  current: TaskRecord['status'],
+  next: TaskRecord['status']
+): Promise<void> {
+  if (current !== TaskStatus.CLOSED || next !== TaskStatus.OPEN) return;
+  const activeAssignments = await tx.query<{ count: string }>(
+    `
+      SELECT count(*)::text AS count
+      FROM task_assignments
+      WHERE task_id = $1
+        AND status IN ('assigned','in_progress')
+    `,
+    [taskId]
+  );
+  if (Number(activeAssignments.rows[0]?.count ?? 0) > 0) {
+    throw new Error('Task status transition is not supported');
+  }
 }
