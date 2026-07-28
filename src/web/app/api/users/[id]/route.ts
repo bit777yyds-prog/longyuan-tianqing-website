@@ -25,6 +25,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     }
 
     const updated = await createDatabaseClient().transaction(async (tx) => {
+      await tx.query("SELECT pg_advisory_xact_lock(hashtext('longyuan.admin-status-guard'))");
       const activeAdmins = await tx.query<{ id: string }>(
         `
           SELECT id
