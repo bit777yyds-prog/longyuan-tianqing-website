@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Archive, FilePlus2, RotateCcw, Search, Send } from 'lucide-react';
+import { Archive, FilePlus2, Pencil, RotateCcw, Search, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -19,6 +19,10 @@ type TaskRow = {
   reward: string;
   status: string;
   slotsRemaining: number;
+  description: string;
+  acceptanceCriteria: string[];
+  aiRules: string[];
+  qualifications: string[];
   createdAt: string;
 };
 
@@ -44,6 +48,7 @@ export function TasksWorkspace() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<TaskRow>();
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actionTaskId, setActionTaskId] = useState<string>();
@@ -78,20 +83,7 @@ export function TasksWorkspace() {
       const response = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          title: formData.get('title'),
-          projectName: formData.get('projectName'),
-          taskType: formData.get('taskType'),
-          deliverable: formData.get('deliverable'),
-          deliveryDeadline: formData.get('deliveryDeadline'),
-          reward: formData.get('reward'),
-          slotsTotal: Number(formData.get('slotsTotal')),
-          description: formData.get('description'),
-          acceptanceCriteria: String(formData.get('acceptanceCriteria') ?? '').split('\n'),
-          aiRules: String(formData.get('aiRules') ?? '').split('\n'),
-          qualifications: String(formData.get('qualifications') ?? '').split('\n'),
-          status: submitter?.value === 'open' ? 'open' : 'draft',
-        }),
+        body: JSON.stringify({ ...taskPayloadFromForm(formData), status: submitter?.value === 'open' ? 'open' : 'draft' }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? '任务创建失败');
@@ -99,6 +91,29 @@ export function TasksWorkspace() {
       setDialogOpen(false);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '任务创建失败');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function updateDraftTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingTask) return;
+    setError(undefined);
+    setIsSubmitting(true);
+    const formData = new FormData(event.currentTarget);
+    try {
+      const response = await fetch(`/api/tasks/${editingTask.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(taskPayloadFromForm(formData)),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? '任务保存失败');
+      setTasks((current) => current.map((task) => task.id === editingTask.id ? payload.task : task));
+      setEditingTask(undefined);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '任务保存失败');
     } finally {
       setIsSubmitting(false);
     }
@@ -130,7 +145,7 @@ export function TasksWorkspace() {
           <h1 className="font-serif text-2xl font-semibold text-text md:text-3xl">任务管理</h1>
           <p className="mt-2 text-sm text-text-muted">创建草稿，发布开放任务，并查看任务状态。</p>
         </div>
-        <Button type="button" size="sm" className="gap-2" onClick={() => setDialogOpen(true)}>
+        <Button type="button" size="sm" className="gap-2" onClick={() => { setEditingTask(undefined); setDialogOpen(true); }}>
           <FilePlus2 size={16} aria-hidden="true" />新建任务
         </Button>
       </div>
@@ -175,6 +190,11 @@ export function TasksWorkspace() {
                   <td className="px-4 py-3 text-text-muted">{task.slotsRemaining}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">
+                      {task.status === 'draft' && (
+                        <Button type="button" size="sm" variant="secondary" className="gap-1.5" onClick={() => setEditingTask(task)}>
+                          <Pencil size={14} aria-hidden="true" />编辑
+                        </Button>
+                      )}
                       <TaskStatusAction task={task} isLoading={actionTaskId === task.id} onUpdate={updateTaskStatus} />
                       {task.status === 'draft' ? (
                         <span className="text-xs text-text-muted">未公开</span>
@@ -192,30 +212,38 @@ export function TasksWorkspace() {
         </div>
       </section>
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} title="新建任务" description="发布后会出现在前台开放任务列表。">
-        <form className="grid max-h-[70vh] gap-4 overflow-y-auto pr-1" onSubmit={createTask}>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Input label="任务标题" name="title" required />
-            <Input label="所属项目" name="projectName" defaultValue="龙渊天青：窑火之书" required />
-            <Select label="任务类型" name="taskType" options={taskTypeOptions} required />
-            <Input label="交付截止日" name="deliveryDeadline" type="date" />
-            <Input label="名额" name="slotsTotal" type="number" min={1} max={999} defaultValue={1} required />
-            <Input label="报酬" name="reward" placeholder="固定报酬 / 按条目计酬 / 署名" />
-          </div>
-          <Input label="交付物" name="deliverable" placeholder="结构化表格、校对批注、说明文档等" required />
-          <Textarea label="任务说明" name="description" required />
-          <Textarea label="验收标准" name="acceptanceCriteria" placeholder="每行一条" required />
-          <Textarea label="AI 使用规则" name="aiRules" placeholder="每行一条" required />
-          <Textarea label="申请资格" name="qualifications" placeholder="每行一条" required />
-          <div className="flex justify-end gap-2 border-t border-border pt-4">
-            <Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>取消</Button>
-            <Button type="submit" name="intent" value="draft" variant="secondary" isLoading={isSubmitting}>保存草稿</Button>
-            <Button type="submit" name="intent" value="open" isLoading={isSubmitting}>发布任务</Button>
-          </div>
-        </form>
+      <Dialog
+        open={dialogOpen || Boolean(editingTask)}
+        onClose={() => { setDialogOpen(false); setEditingTask(undefined); }}
+        title={editingTask ? '编辑草稿' : '新建任务'}
+        description={editingTask ? '仅草稿任务可以编辑内容。' : '发布后会出现在前台开放任务列表。'}
+      >
+        <TaskForm
+          key={editingTask?.id ?? 'create-task'}
+          task={editingTask}
+          isSubmitting={isSubmitting}
+          onSubmit={editingTask ? updateDraftTask : createTask}
+          onCancel={() => { setDialogOpen(false); setEditingTask(undefined); }}
+        />
       </Dialog>
     </div>
   );
+}
+
+function taskPayloadFromForm(formData: FormData) {
+  return {
+    title: formData.get('title'),
+    projectName: formData.get('projectName'),
+    taskType: formData.get('taskType'),
+    deliverable: formData.get('deliverable'),
+    deliveryDeadline: formData.get('deliveryDeadline'),
+    reward: formData.get('reward'),
+    slotsTotal: Number(formData.get('slotsTotal')),
+    description: formData.get('description'),
+    acceptanceCriteria: String(formData.get('acceptanceCriteria') ?? '').split('\n'),
+    aiRules: String(formData.get('aiRules') ?? '').split('\n'),
+    qualifications: String(formData.get('qualifications') ?? '').split('\n'),
+  };
 }
 
 function Summary({ label, value }: { label: string; value: number }) {
@@ -255,11 +283,53 @@ function TaskStatusAction({
   return <span className="text-xs text-text-muted">不可变更</span>;
 }
 
-function Textarea({ label, name, placeholder, required }: { label: string; name: string; placeholder?: string; required?: boolean }) {
+function TaskForm({
+  task,
+  isSubmitting,
+  onSubmit,
+  onCancel,
+}: {
+  task?: TaskRow;
+  isSubmitting: boolean;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onCancel: () => void;
+}) {
+  const isEditing = Boolean(task);
+  return (
+    <form className="grid max-h-[70vh] gap-4 overflow-y-auto pr-1" onSubmit={onSubmit}>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Input label="任务标题" name="title" defaultValue={task?.title} required />
+        <Input label="所属项目" name="projectName" defaultValue={task?.project ?? '龙渊天青：窑火之书'} required />
+        <Select label="任务类型" name="taskType" options={taskTypeOptions} defaultValue={task?.type} required />
+        <Input label="交付截止日" name="deliveryDeadline" type="date" defaultValue={task?.deadline === '待定' ? '' : task?.deadline} />
+        <Input label="名额" name="slotsTotal" type="number" min={1} max={999} defaultValue={task?.slotsRemaining ?? 1} required />
+        <Input label="报酬" name="reward" placeholder="固定报酬 / 按条目计酬 / 署名" defaultValue={task?.reward === '按任务约定结算' ? '' : task?.reward} />
+      </div>
+      <Input label="交付物" name="deliverable" placeholder="结构化表格、校对批注、说明文档等" defaultValue={task?.deliverable} required />
+      <Textarea label="任务说明" name="description" defaultValue={task?.description} required />
+      <Textarea label="验收标准" name="acceptanceCriteria" placeholder="每行一条" defaultValue={task?.acceptanceCriteria.join('\n')} required />
+      <Textarea label="AI 使用规则" name="aiRules" placeholder="每行一条" defaultValue={task?.aiRules.join('\n')} required />
+      <Textarea label="申请资格" name="qualifications" placeholder="每行一条" defaultValue={task?.qualifications.join('\n')} required />
+      <div className="flex justify-end gap-2 border-t border-border pt-4">
+        <Button type="button" variant="secondary" onClick={onCancel}>取消</Button>
+        {isEditing ? (
+          <Button type="submit" isLoading={isSubmitting}>保存修改</Button>
+        ) : (
+          <>
+            <Button type="submit" name="intent" value="draft" variant="secondary" isLoading={isSubmitting}>保存草稿</Button>
+            <Button type="submit" name="intent" value="open" isLoading={isSubmitting}>发布任务</Button>
+          </>
+        )}
+      </div>
+    </form>
+  );
+}
+
+function Textarea({ label, name, placeholder, required, defaultValue }: { label: string; name: string; placeholder?: string; required?: boolean; defaultValue?: string }) {
   return (
     <label className="flex flex-col gap-1.5">
       <span className="text-sm font-medium text-text">{label}{required && <span aria-hidden="true" className="ml-0.5 text-status-risk">*</span>}</span>
-      <textarea name={name} placeholder={placeholder} required={required} rows={4} className="rounded-md border border-border bg-surface px-3 py-2 text-base text-text placeholder:text-text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-celadon-700 focus-visible:ring-offset-2 focus-visible:ring-offset-bg" />
+      <textarea name={name} placeholder={placeholder} required={required} rows={4} defaultValue={defaultValue} className="rounded-md border border-border bg-surface px-3 py-2 text-base text-text placeholder:text-text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-celadon-700 focus-visible:ring-offset-2 focus-visible:ring-offset-bg" />
     </label>
   );
 }
