@@ -1,10 +1,14 @@
 import { notFound } from 'next/navigation';
-import { tasks } from '@/lib/fixtures/tasks';
+import { headers } from 'next/headers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { requireAuthenticatedUser } from '@/server/auth/authorization';
+import { createDatabaseClient } from '@/server/db/client';
+import { SqlMyTaskRepository } from '@/server/db/my-task-repository';
+import { MyTaskService } from '@/server/domain/my-task-service';
 
 interface SubmitPageProps {
   params: Promise<{ id: string }>;
@@ -12,13 +16,17 @@ interface SubmitPageProps {
 
 export default async function SubmitDeliverablePage({ params }: SubmitPageProps) {
   const { id } = await params;
-  const task = tasks.find((t) => t.id === id);
-  if (!task) notFound();
+  const user = await requireAuthenticatedUser(await headers());
+  const assignment = await new MyTaskService(
+    new SqlMyTaskRepository(createDatabaseClient())
+  ).findAssignedTask(user.actorId, id);
+  if (!assignment) notFound();
+  const { task } = assignment;
 
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2">
-        <StatusBadge status={task.status} />
+        <StatusBadge status={assignment.assignmentStatus} />
         <span className="text-sm text-text-muted">{task.project}</span>
       </div>
       <h1 className="mt-3 font-serif text-3xl font-semibold text-text">提交交付物</h1>
