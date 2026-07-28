@@ -25,6 +25,7 @@ describe('TaskService', () => {
       listTasks: vi.fn(),
       findTask: vi.fn(),
       updateTaskStatus: vi.fn(),
+      updateDraftTask: vi.fn(),
     };
 
     const task = await new TaskService(repository).createTask('actor-id', {
@@ -57,6 +58,7 @@ describe('TaskService', () => {
       listTasks: vi.fn(),
       findTask: vi.fn(),
       updateTaskStatus: vi.fn(),
+      updateDraftTask: vi.fn(),
     };
 
     expect(() => new TaskService(repository).createTask('actor-id', {
@@ -78,6 +80,7 @@ describe('TaskService', () => {
       listTasks: vi.fn(),
       findTask: vi.fn(async () => taskRecord({ status: 'draft' })),
       updateTaskStatus: vi.fn(async (_actorId, _id, status) => taskRecord({ status })),
+      updateDraftTask: vi.fn(),
     };
 
     const service = new TaskService(repository);
@@ -93,11 +96,67 @@ describe('TaskService', () => {
       listTasks: vi.fn(),
       findTask: vi.fn(async () => taskRecord({ status: 'draft' })),
       updateTaskStatus: vi.fn(),
+      updateDraftTask: vi.fn(),
     };
 
     await expect(new TaskService(repository).updateTaskStatus('actor-id', 'task-id', 'closed'))
       .rejects.toThrow('Task status transition is not supported');
     expect(repository.updateTaskStatus).not.toHaveBeenCalled();
+  });
+
+  it('updates draft task details', async () => {
+    const repository: TaskRepository = {
+      createTask: vi.fn(),
+      listTasks: vi.fn(),
+      findTask: vi.fn(async () => taskRecord({ status: 'draft' })),
+      updateTaskStatus: vi.fn(),
+      updateDraftTask: vi.fn(async (_actorId, _id, input) => ({
+        ...taskRecord({ status: 'draft' }),
+        title: input.title,
+        project: input.projectName,
+        slotsRemaining: input.slotsTotal,
+        acceptanceCriteria: input.acceptanceCriteria,
+      })),
+    };
+
+    await expect(new TaskService(repository).updateDraftTask('actor-id', 'task-id', {
+      title: ' 修改后的标题 ',
+      projectName: ' 新项目 ',
+      description: '说明',
+      taskType: '文献整理',
+      deliverable: '表格',
+      slotsTotal: 3,
+      acceptanceCriteria: [' 有出处 ', ''],
+      aiRules: ['可辅助'],
+      qualifications: ['认真'],
+    })).resolves.toMatchObject({
+      title: '修改后的标题',
+      project: '新项目',
+      slotsRemaining: 3,
+      acceptanceCriteria: ['有出处'],
+    });
+  });
+
+  it('rejects edits to non-draft tasks', async () => {
+    const repository: TaskRepository = {
+      createTask: vi.fn(),
+      listTasks: vi.fn(),
+      findTask: vi.fn(async () => taskRecord({ status: 'open' })),
+      updateTaskStatus: vi.fn(),
+      updateDraftTask: vi.fn(),
+    };
+
+    await expect(new TaskService(repository).updateDraftTask('actor-id', 'task-id', {
+      title: '标题',
+      projectName: '项目',
+      description: '说明',
+      taskType: '文献整理',
+      deliverable: '表格',
+      acceptanceCriteria: ['有出处'],
+      aiRules: ['可辅助'],
+      qualifications: ['认真'],
+    })).rejects.toThrow('Only draft tasks can be edited');
+    expect(repository.updateDraftTask).not.toHaveBeenCalled();
   });
 });
 

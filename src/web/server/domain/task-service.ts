@@ -17,6 +17,8 @@ export interface CreateTaskInput {
   qualifications: string[];
 }
 
+export type UpdateDraftTaskInput = Omit<CreateTaskInput, 'status'>;
+
 export interface TaskRecord {
   id: string;
   title: string;
@@ -41,6 +43,7 @@ export interface TaskRepository {
   listTasks(input: { includeDrafts: boolean }): Promise<TaskRecord[]>;
   findTask(id: string, input: { includeDrafts: boolean }): Promise<TaskRecord | null>;
   updateTaskStatus(actorId: string, id: string, status: SharedTaskStatus): Promise<TaskRecord | null>;
+  updateDraftTask(actorId: string, id: string, input: NormalizedUpdateDraftTaskInput): Promise<TaskRecord | null>;
 }
 
 export interface NormalizedCreateTaskInput extends CreateTaskInput {
@@ -48,12 +51,22 @@ export interface NormalizedCreateTaskInput extends CreateTaskInput {
   reward: string;
 }
 
+export type NormalizedUpdateDraftTaskInput = Omit<NormalizedCreateTaskInput, 'status'>;
+
 export class TaskService {
   constructor(private readonly repository: TaskRepository) {}
 
   createTask(actorId: string, input: CreateTaskInput): Promise<TaskRecord> {
     const normalized = normalizeCreateTaskInput(input);
     return this.repository.createTask(actorId, normalized);
+  }
+
+  async updateDraftTask(actorId: string, id: string, input: UpdateDraftTaskInput): Promise<TaskRecord | null> {
+    const normalized = normalizeUpdateDraftTaskInput(input);
+    const current = await this.repository.findTask(id, { includeDrafts: true });
+    if (!current) return null;
+    if (current.status !== TaskStatus.DRAFT) throw new Error('Only draft tasks can be edited');
+    return this.repository.updateDraftTask(actorId, id, normalized);
   }
 
   listTasks(input: { includeDrafts: boolean }): Promise<TaskRecord[]> {
@@ -75,6 +88,22 @@ export class TaskService {
 }
 
 export function normalizeCreateTaskInput(input: CreateTaskInput): NormalizedCreateTaskInput {
+  const normalized = normalizeTaskFields(input);
+  if (input.status !== TaskStatus.DRAFT && input.status !== TaskStatus.OPEN) {
+    throw new Error('Task status must be draft or open');
+  }
+
+  return {
+    ...normalized,
+    status: input.status,
+  };
+}
+
+export function normalizeUpdateDraftTaskInput(input: UpdateDraftTaskInput): NormalizedUpdateDraftTaskInput {
+  return normalizeTaskFields(input);
+}
+
+function normalizeTaskFields(input: UpdateDraftTaskInput): NormalizedUpdateDraftTaskInput {
   const title = requireText(input.title, 'Task title', 120);
   const projectName = requireText(input.projectName, 'Project name', 120);
   const description = requireText(input.description, 'Task description', 4_000);
@@ -86,9 +115,6 @@ export function normalizeCreateTaskInput(input: CreateTaskInput): NormalizedCrea
   const aiRules = normalizeTextList(input.aiRules, 'AI rules');
   const qualifications = normalizeTextList(input.qualifications, 'Qualifications');
 
-  if (input.status !== TaskStatus.DRAFT && input.status !== TaskStatus.OPEN) {
-    throw new Error('Task status must be draft or open');
-  }
   if (input.deliveryDeadline && Number.isNaN(new Date(input.deliveryDeadline).getTime())) {
     throw new Error('Delivery deadline is invalid');
   }
@@ -102,7 +128,6 @@ export function normalizeCreateTaskInput(input: CreateTaskInput): NormalizedCrea
     deliveryDeadline: input.deliveryDeadline,
     reward,
     slotsTotal,
-    status: input.status,
     acceptanceCriteria,
     aiRules,
     qualifications,

@@ -1,5 +1,10 @@
 import { TaskStatus } from '@longyuan/shared';
-import { NormalizedCreateTaskInput, TaskRecord, TaskRepository } from '../domain/task-service';
+import {
+  NormalizedCreateTaskInput,
+  NormalizedUpdateDraftTaskInput,
+  TaskRecord,
+  TaskRepository,
+} from '../domain/task-service';
 import { TransactionalDatabaseClient } from './database-client';
 
 interface TaskRow {
@@ -21,20 +26,7 @@ export class SqlTaskRepository implements TaskRepository {
 
   async createTask(actorId: string, input: NormalizedCreateTaskInput): Promise<TaskRecord> {
     return this.db.transaction(async (tx) => {
-      const existingProject = await tx.query<{ id: string }>(
-        'SELECT id FROM projects WHERE name = $1 AND status = $2 ORDER BY created_at ASC LIMIT 1',
-        [input.projectName, 'active']
-      );
-      const project = existingProject.rows[0] ?? (await tx.query<{ id: string }>(
-        `
-          INSERT INTO projects (name, description, owner_actor_id, status)
-          VALUES ($1, $2, $3, 'active')
-          RETURNING id
-        `,
-        [input.projectName, `${input.projectName} 任务项目`, actorId]
-      )).rows[0];
-
-      if (!project?.id) throw new Error('Project could not be created');
+      const projectId = await getOrCreateProjectId(tx, actorId, input.projectName);
 
       const result = await tx.query<TaskRow>(
         `
@@ -56,7 +48,7 @@ export class SqlTaskRepository implements TaskRepository {
             (SELECT name FROM projects WHERE id = tasks.project_id) AS project_name
         `,
         [
-          project.id,
+          projectId,
           input.title,
           input.description,
           input.taskType,
@@ -142,6 +134,86 @@ export class SqlTaskRepository implements TaskRepository {
       return task;
     });
   }
+
+  async updateDraftTask(actorId: string, id: string, input: NormalizedUpdateDraftTaskInput): Promise<TaskRecord | null> {
+    return this.db.transaction(async (tx) => {
+      const draftTask = await tx.query<{ id: string }>(
+        'SELECT id FROM tasks WHERE id = $1 AND status = $2 FOR UPDATE',
+        [id, TaskStatus.DRAFT]
+      );
+      if (!draftTask.rows[0]) return null;
+
+      const projectId = await getOrCreateProjectId(tx, actorId, input.projectName);
+      const result = await tx.query<TaskRow>(
+        `
+          UPDATE tasks
+          SET
+            project_id = $2,
+            title = $3,
+            description = $4,
+            task_type = $5,
+            delivery_deadline = $6,
+            acceptance_criteria = $7::jsonb,
+            compensation = $8::jsonb,
+            updated_at = now()
+          WHERE id = $1
+            AND status = 'draft'
+          RETURNING
+            tasks.*,
+            (SELECT name FROM projects WHERE id = tasks.project_id) AS project_name
+        `,
+        [
+          id,
+          projectId,
+          input.title,
+          input.description,
+          input.taskType,
+          input.deliveryDeadline ? new Date(input.deliveryDeadline) : null,
+          JSON.stringify({
+            deliverable: input.deliverable,
+            items: input.acceptanceCriteria,
+            aiRules: input.aiRules,
+            qualifications: input.qualifications,
+            slotsTotal: input.slotsTotal,
+          }),
+          JSON.stringify({ summary: input.reward }),
+        ]
+      );
+      if (!result.rows[0]) return null;
+
+      const task = mapTask(result.rows[0]);
+      await tx.query(
+        `
+          INSERT INTO audit_logs (actor_id, action, object_type, object_id, after_data)
+          VALUES ($1, 'task.updated', 'task', $2, $3::jsonb)
+        `,
+        [actorId, task.id, JSON.stringify({ status: task.status, title: task.title })]
+      );
+      return task;
+    });
+  }
+}
+
+async function getOrCreateProjectId(
+  tx: { query<T>(text: string, params?: unknown[]): Promise<{ rows: T[] }> },
+  actorId: string,
+  projectName: string
+): Promise<string> {
+  const existingProject = await tx.query<{ id: string }>(
+    'SELECT id FROM projects WHERE name = $1 AND status = $2 ORDER BY created_at ASC LIMIT 1',
+    [projectName, 'active']
+  );
+  const project = existingProject.rows[0] ?? (await tx.query<{ id: string }>(
+    `
+      INSERT INTO projects (name, description, owner_actor_id, status)
+      VALUES ($1, $2, $3, 'active')
+      RETURNING id
+    `,
+    [projectName, `${projectName} 任务项目`, actorId]
+  )).rows[0];
+
+  if (!project?.id) throw new Error('Project could not be created');
+  return project.id;
 }
 
 function mapTask(row: TaskRow): TaskRecord {
